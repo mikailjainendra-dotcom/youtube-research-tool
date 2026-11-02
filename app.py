@@ -16,16 +16,16 @@ st.caption(
     " memindai Hidden Gem lintas topik secara otomatis."
 )
 
-# --- SIDEBAR GLOBAL ---
+# --- SIDEBAR GLOBAL (INPUT API KEY MANUAL) ---
 with st.sidebar:
-  st.header("⚙️ Konfigurasi Umum")
+  st.header("⚙️ Konfigurasi Sistem")
   api_key = st.text_input(
       "Masukkan YouTube API Key Anda:", type="password"
   )
   st.markdown("---")
   st.info(
-      "💡 **Tips:** Pastikan API Key sudah dimasukkan sebelum menjalankan riset"
-      " di tab mana pun."
+      "💡 Masukkan API Key Anda di atas sebelum menjalankan riset di tab mana"
+      " pun."
   )
 
 
@@ -59,7 +59,9 @@ with tab_musik:
         key="input_q_musik",
     )
   with col_m2:
-    max_res_musik = st.slider("Jumlah Hasil:", 10, 50, 20, key="slider_res_musik")
+    max_res_musik = st.slider(
+        "Jumlah Hasil:", 10, 50, 20, key="slider_res_musik"
+    )
 
   if st.button("🔍 Mulai Riset Musik", type="primary", key="btn_musik"):
     if not api_key:
@@ -75,7 +77,7 @@ with tab_musik:
               .list(
                   q=query_musik,
                   type="video",
-                  videoCategoryId="10",  # Kategori Musik
+                  videoCategoryId="10",
                   part="id,snippet",
                   maxResults=max_res_musik,
                   order="date",
@@ -121,7 +123,6 @@ with tab_musik:
                   round((likes / views * 100), 2) if views > 0 else 0
               )
 
-              # Klasifikasi Cover vs Original
               judul_lower = judul.lower()
               if any(
                   kunci in judul_lower
@@ -156,7 +157,6 @@ with tab_musik:
             df_musik = pd.DataFrame(data_list)
             df_musik = df_musik.sort_values(by="Views/Hari", ascending=False)
 
-            # Tampilkan metrik & tabel
             c1, c2, c3 = st.columns(3)
             c1.metric("Total Video", len(df_musik))
             c2.metric(
@@ -180,7 +180,6 @@ with tab_musik:
                 hide_index=True,
             )
 
-            # Download CSV Musik
             csv_m = df_musik.to_csv(index=False).encode("utf-8")
             st.download_button(
                 label="📥 Download Hasil Riset Musik (CSV)",
@@ -194,14 +193,14 @@ with tab_musik:
 
 
 # ==========================================
-# TAB 2: AUTO-SCAN HIDDEN GEM SEMUA TOPIK
+# TAB 2: AUTO-SCAN HIDDEN GEM
 # ==========================================
 with tab_global:
-  st.header("🌍 Auto-Scan Hidden Gem (Indo vs Global)")
+  st.header("🌍 Auto-Scan Hidden Gem (Channel Kecil & Video Baru)")
   st.markdown(
-      "Gunakan tab ini untuk memindai tren dari berbagai kategori secara"
-      " otomatis tanpa kata kunci, disaring dari channel kecil berpotensi"
-      " tinggi."
+      "Tab ini dirancang khusus untuk memindai video **terbaru (maksimal 60"
+      " hari lalu)** dari **channel kecil/menengah** yang views harian-nya"
+      " sedang melesat naik."
   )
 
   col_g1, col_g2 = st.columns(2)
@@ -229,24 +228,30 @@ with tab_global:
         key="select_kat_global",
     )
 
-  col_g3, col_g4 = st.columns(2)
+  col_g3, col_g4, col_g5 = st.columns(3)
   with col_g3:
     max_subs = st.number_input(
         "Maksimal Subscriber Channel:",
-        value=150000,
+        value=50000,
         step=10000,
         key="num_max_subs",
     )
   with col_g4:
     min_vpd = st.number_input(
-        "Minimal Views per Hari:", value=20, step=10, key="num_min_vpd"
+        "Minimal Views per Hari:", value=10, step=5, key="num_min_vpd"
+    )
+  with col_g5:
+    max_umur_hari = st.number_input(
+        "Maksimal Umur Video (Hari):", value=60, step=10, key="num_max_umur"
     )
 
-  if st.button("🚀 Mulai Auto-Scan Global", type="primary", key="btn_global"):
+  if st.button("🚀 Mulai Auto-Scan Hidden Gem", type="primary", key="btn_global"):
     if not api_key:
       st.warning("Harap masukkan YouTube API Key terlebih dahulu di sidebar!")
     else:
-      with st.spinner(f"Memindai data untuk target: **{target_pasar}**..."):
+      with st.spinner(
+          f"Memindai video terbaru untuk target: **{target_pasar}**..."
+      ):
         try:
           youtube = build("youtube", "v3", developerKey=api_key)
 
@@ -270,10 +275,10 @@ with tab_global:
           params = {
               "type": "video",
               "part": "id,snippet",
-              "maxResults": 30,
+              "maxResults": 40,
               "regionCode": reg_code,
               "relevanceLanguage": lang_code,
-              "order": "viewCount",
+              "order": "date",
           }
           if cat_id:
             params["videoCategoryId"] = cat_id
@@ -304,11 +309,16 @@ with tab_global:
               snippet = item["snippet"]
               stats = item["statistics"]
 
-              judul = snippet["title"]
-              channel = snippet["channelTitle"]
               tgl_upload = snippet["publishedAt"]
-              channel_id = snippet["channelId"]
+              tgl_upload_dt = datetime.datetime.fromisoformat(
+                  tgl_upload.replace("Z", "+00:00")
+              )
+              umur_hari = max((sekarang - tgl_upload_dt).days, 1)
 
+              if umur_hari > max_umur_hari:
+                continue
+
+              channel_id = snippet["channelId"]
               try:
                 ch_resp = (
                     youtube.channels()
@@ -321,11 +331,8 @@ with tab_global:
               except:
                 sub_count = 0
 
-              tgl_upload_dt = datetime.datetime.fromisoformat(
-                  tgl_upload.replace("Z", "+00:00")
-              )
-              umur_hari = max((sekarang - tgl_upload_dt).days, 1)
-
+              judul = snippet["title"]
+              channel = snippet["channelTitle"]
               views = int(stats.get("viewCount", 0))
               likes = int(stats.get("likeCount", 0))
               views_per_hari = round(views / umur_hari, 2)
@@ -349,10 +356,10 @@ with tab_global:
 
             if df_g.empty:
               st.warning(
-                  "⚠️ Tidak ada data mentah yang berhasil diproses dari YouTube."
+                  "⚠️ Tidak ada video yang lolos filter umur video terbaru."
+                  " Coba naikkan 'Maksimal Umur Video'."
               )
             else:
-              # Terapkan Filter Hidden Gem dengan batas yang lebih longgar secara default
               df_filtered = df_g[
                   (df_g["Subscriber"] <= max_subs)
                   & (df_g["Views/Hari"] >= min_vpd)
@@ -363,18 +370,19 @@ with tab_global:
 
               if df_filtered.empty:
                 st.error(
-                    "❌ **Data habis karena filter terlalu ketat!** Silakan"
-                    " naikkan 'Maksimal Subscriber' atau turunkan 'Minimal Views"
-                    " per Hari' di atas."
+                    "❌ **Data habis karena filter subscriber/views terlalu"
+                    " ketat!** Coba naikkan 'Maksimal Subscriber' atau turunkan"
+                    " 'Minimal Views per Hari'."
                 )
                 st.markdown(
-                    "### 📋 Berikut Data Mentah (Sebelum Difilter) sebagai"
-                    " Referensi:"
+                    "### 📋 Data Mentah Video Terbaru (Sebelum Difilter"
+                    " Subscriber):"
                 )
                 st.dataframe(df_g, use_container_width=True, hide_index=True)
               else:
                 st.success(
-                    f"Ditemukan {len(df_filtered)} video hidden gem yang sesuai!"
+                    f"Ditemukan {len(df_filtered)} video hidden gem dari"
+                    " channel kecil!"
                 )
                 st.dataframe(
                     df_filtered,
@@ -393,9 +401,9 @@ with tab_global:
 
                 csv_g = df_filtered.to_csv(index=False).encode("utf-8")
                 st.download_button(
-                    label="📥 Download Hasil Scan Global (CSV)",
+                    label="📥 Download Hasil Scan Hidden Gem (CSV)",
                     data=csv_g,
-                    file_name="auto_hidden_gem_global.csv",
+                    file_name="hidden_gem_youtube.csv",
                     mime="text/csv",
                     key="dl_csv_global",
                 )
